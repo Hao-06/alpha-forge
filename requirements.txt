@@ -1,0 +1,20 @@
+# LLM
+openai>=1.50.0          # OpenAI-compatible SDK for GMI Cloud
+httpx[socks]>=0.27.0    # SOCKS proxy support（GMI 在境外，国内调用一般走代理）
+python-dotenv>=1.0.0
+
+# Market data
+ccxt>=4.4.0             # Crypto exchange unified API
+pandas>=2.2.0
+numpy>=1.26.0
+
+# Indicators
+ta>=0.11.0              # Technical analysis (RSI/MACD/ADX/...)
+
+# UI
+streamlit>=1.40.0
+plotly>=5.24.0
+
+# Utilities
+pydantic>=2.9.0
+requests>=2.32.0

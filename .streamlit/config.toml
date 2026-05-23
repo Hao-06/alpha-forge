@@ -1,0 +1,15 @@
+# 强制深色金融终端主题，与决策驾驶舱设计语言保持一致。
+[theme]
+base = "dark"
+primaryColor = "#d4af37"            # 古金色（按钮、强调）
+backgroundColor = "#0e1117"         # 主区背景（深炭灰）
+secondaryBackgroundColor = "#161b22" # 侧栏背景（略亮一档的深色）
+textColor = "#c9d1d9"               # 主文字（浅灰）
+font = "monospace"                  # 金融终端字体
+
+[server]
+headless = true
+runOnSave = true
+
+[browser]
+gatherUsageStats = false
