@@ -73,6 +73,7 @@ class GMIClient:
             ))
             return mock
 
+        t0 = time.perf_counter()
         try:
             kwargs: dict[str, Any] = dict(
                 model=model,
@@ -83,7 +84,6 @@ class GMIClient:
             if response_format is not None:
                 kwargs["response_format"] = response_format
 
-            t0 = time.perf_counter()
             resp = self._client.chat.completions.create(**kwargs)
             latency_ms = int((time.perf_counter() - t0) * 1000)
 
@@ -99,13 +99,23 @@ class GMIClient:
             return text
 
         except Exception as exc:
+            # 余额不足 / 配额错误 → 优雅降级到 mock，让 UI 流程不中断
+            msg = str(exc).lower()
+            is_quota = ("insufficient" in msg or "quota" in msg
+                        or "402" in msg or "429" in msg)
+            status = ("quota_exhausted → mock" if is_quota
+                      else f"error: {exc.__class__.__name__}: {exc}")
             self._append_log(CallLog(
                 ts=ts, model=model, agent=agent,
                 prompt_preview=prompt_preview,
-                latency_ms=int((time.perf_counter() - ts) * 1000),
+                latency_ms=int((time.perf_counter() - t0) * 1000),
                 prompt_tokens=None, completion_tokens=None,
-                status=f"error: {exc.__class__.__name__}: {exc}",
+                status=status,
+                response_preview=f"[QUOTA-FALLBACK] agent={agent}" if is_quota else "",
             ))
+            if is_quota:
+                # 返回符合 mock 协议的占位字符串，让上层 agents 走友好 mock 分支
+                return f"[MOCK · quota_exhausted · agent={agent} · model={model}]"
             raise
 
     # ------------------------------------------------------------------ #
