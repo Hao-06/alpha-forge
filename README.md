@@ -96,4 +96,4 @@ alpha-forge/
 
 **赛事**：2026「头号 Builder · 出海 AI Agent」大赛
 **提交日期**：2026-05-23
-**代码仓库**：https://atomgit.com/Hao_Sun/alpha-forge
+**代码仓库**：https://atomgit.com/Hao_Sun/Builder
