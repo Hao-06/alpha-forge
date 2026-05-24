@@ -20,7 +20,7 @@
 **[0:15-0:30] Agent 工作矩阵特写**
 > "三个 Agent 同时工作：
 > DeepSeek-R1 判断当前是震荡行情；
-> Claude 从 5 个策略库里选出网格 + 均值回归两个组合；
+> GPT-4o 从 5 个策略库里选出动量 + 突破两个组合；
 > GPT-5 风险审核通过，评 4 分。"
 
 **[0:30-0:40] 决策输出**
@@ -48,8 +48,8 @@
 **[0:15-0:30] Agent matrix close-up**
 > "Three agents work in parallel:
 > DeepSeek-R1 detects a ranging regime;
-> Claude allocates weights to Grid plus Mean Reversion;
-> GPT-5 risk-audits with a score of 4 out of 10."
+> GPT-4o allocates weights to Momentum plus Breakout;
+> GPT-4o-mini risk-audits with a score of 4 out of 10."
 
 **[0:30-0:40] Decision output**
 > *(Highlight JSON)*
