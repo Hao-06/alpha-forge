@@ -31,19 +31,32 @@ class CallLog:
 
 
 class GMIClient:
-    """对 GMI Inference Engine 的薄包装，统一记录调用日志。"""
+    """对 GMI Inference Engine 的薄包装，统一记录调用日志。
+
+    ⚠️ lazy client：每次 chat() 调用前都检查 settings 是否已 configured，
+    必要时按需创建 OpenAI client。避免 Streamlit Cloud cold-start 时 settings
+    还没注入 secrets 就 init 出永久 None client 的陷阱。
+    """
 
     def __init__(self) -> None:
+        self._client: OpenAI | None = None
+        self._client_key_signature: str = ""   # 用来检测 key 变更
+        self._logs: list[CallLog] = []
+        self._lock = Lock()
+
+    def _ensure_client(self) -> OpenAI | None:
+        """每次调用前按需创建 OpenAI 客户端。"""
         if not settings.llm.configured:
-            # 允许在 mock 模式启动（开发者面板能展示一条"未配置"提示）
-            self._client: OpenAI | None = None
-        else:
+            return None
+        # 如果 key 变了（理论上不会，但保险），重建
+        signature = f"{settings.llm.api_key}:{settings.llm.base_url}"
+        if self._client is None or signature != self._client_key_signature:
             self._client = OpenAI(
                 api_key=settings.llm.api_key,
                 base_url=settings.llm.base_url,
             )
-        self._logs: list[CallLog] = []
-        self._lock = Lock()
+            self._client_key_signature = signature
+        return self._client
 
     # ------------------------------------------------------------------ #
     # 调用入口
@@ -62,7 +75,8 @@ class GMIClient:
         ts = time.time()
         prompt_preview = self._preview(messages[-1].get("content", "")) if messages else ""
 
-        if self._client is None:
+        client = self._ensure_client()
+        if client is None:
             # mock 模式：返回一个明显的占位符，方便 UI 调试
             mock = f"[MOCK · GMI_API_KEY 未配置 · agent={agent} · model={model}]"
             self._append_log(CallLog(
@@ -84,7 +98,7 @@ class GMIClient:
             if response_format is not None:
                 kwargs["response_format"] = response_format
 
-            resp = self._client.chat.completions.create(**kwargs)
+            resp = client.chat.completions.create(**kwargs)
             latency_ms = int((time.perf_counter() - t0) * 1000)
 
             text = resp.choices[0].message.content or ""
