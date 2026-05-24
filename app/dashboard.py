@@ -94,6 +94,20 @@ with st.sidebar:
 
     if not settings.llm.configured:
         st.error("⚠️ GMI_API_KEY 未配置\n\n复制 `.env.example` 为 `.env` 并填入 Key 后重启。")
+        # 诊断信息：帮助排查 Streamlit Cloud secrets 注入是否生效
+        with st.expander("🔍 诊断信息（点击展开）"):
+            try:
+                _sec_keys = list(st.secrets.keys())
+                st.caption(f"st.secrets 里检测到 {len(_sec_keys)} 个 key：{_sec_keys or '（空）'}")
+            except Exception as _e:
+                st.caption(f"st.secrets 读取失败：{type(_e).__name__}: {_e}")
+            _env_key = os.environ.get("GMI_API_KEY", "")
+            if _env_key:
+                st.caption(f"os.environ['GMI_API_KEY']：长度 {len(_env_key)}，开头 `{_env_key[:6]}…`")
+            else:
+                st.caption("os.environ['GMI_API_KEY']：**空** ← secrets 没注入到环境变量")
+            st.caption(f"settings.llm.api_key 长度：{len(settings.llm.api_key)}")
+            st.caption(f"settings.llm.configured：{settings.llm.configured}")
 
     st.markdown("**币种**")
     symbol = st.selectbox("symbol", settings.market.symbols, label_visibility="collapsed")
