@@ -32,7 +32,8 @@ class LLMSettings:
 
     @property
     def model_strategy(self) -> str:
-        return os.getenv("MODEL_STRATEGY", "anthropic/claude-opus-4.6")
+        # claude-opus-4.6 在 Streamlit Cloud 段被限速，换 gpt-4o 更稳
+        return os.getenv("MODEL_STRATEGY", "openai/gpt-4o")
 
     @property
     def model_risk(self) -> str:
