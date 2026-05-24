@@ -31,3 +31,4 @@ env/
 runs/
 data_cache/
 *.log
+*.mp4
