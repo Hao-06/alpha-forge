@@ -102,7 +102,7 @@ class FundingArbAgent:
                     FundingPick(
                         inst_id=s.inst_id, rate_pct=s.rate_pct,
                         direction="short" if s.rate_pct > 0 else "long",
-                        rationale=("📍 MOCK · 真模式下由 Claude 输出套利推荐"
+                        rationale=("📍 MOCK · 真模式下由 GPT-4o 输出套利推荐"
                                     if mock_mode else "（LLM 解析失败，按绝对值取前 3）"),
                         confidence=min(0.95, 0.4 + s.abs_rate_pct * 2),
                     )

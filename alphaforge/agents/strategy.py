@@ -1,6 +1,6 @@
 """策略选择 Agent：基于 regime + 5 策略各自评分，输出权重分配 + 微调建议。
 
-使用 Claude（综合推理 + 跟随规则能力强）。
+使用 GPT-4o（综合判断快 + 跟随复杂规则稳定）。
 """
 from __future__ import annotations
 
@@ -89,11 +89,11 @@ class StrategyAgent:
             mock_mode = (not raw.strip()) or raw.startswith("[MOCK")
             return StrategyPlan(
                 weights=weights,
-                tweaks={n: ("📍 MOCK · 真模式下此处为 Claude 微调建议"
+                tweaks={n: ("📍 MOCK · 真模式下此处为 GPT-4o 微调建议"
                             if mock_mode else "（自动微调建议生成失败）")
                         for n in weights if weights[n] > 0},
                 rationale=("📍 MOCK 模式 —— 当前权重基于策略自评信号绝对值；"
-                            "真模式下由 Claude 4.5 综合 regime + signals 给出"
+                            "真模式下由 GPT-4o 综合 regime + signals 给出"
                             if mock_mode else "（LLM 解析失败，回退到信号绝对值权重）"),
                 signals=signals,
                 raw=raw,

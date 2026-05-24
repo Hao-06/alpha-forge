@@ -156,8 +156,8 @@ if run_btn:
     steps_meta = [
         ("① 抓取实时行情", "snapshot"),
         ("② 行情判断 Agent (R1)", "regime"),
-        ("③ 策略选择 Agent (Claude)", "plan"),
-        ("④ 风险审核 Agent (GPT)", "risk"),
+        ("③ 策略选择 Agent (GPT-4o)", "plan"),
+        ("④ 风险审核 Agent (GPT-4o-mini)", "risk"),
         ("⑤ 决策官综合", "decision"),
     ]
     if with_funding:
@@ -352,11 +352,11 @@ else:
     st.markdown("#### Agent 协作流程")
     st.markdown("""
 1. **抓取实时行情**（CCXT · Binance / OKX）
-2. **行情判断 Agent**（DeepSeek-R1）输出 regime 概率分布
-3. **策略选择 Agent**（Claude 4.6）从 5 策略库分配权重并给微调建议
-4. **风险审核 Agent**（GPT）做合规与逻辑把关
+2. **行情判断 Agent**（DeepSeek-R1-0528）输出 regime 概率分布
+3. **策略选择 Agent**（GPT-4o）从 5 策略库分配权重并给微调建议
+4. **风险审核 Agent**（GPT-4o-mini）做合规与逻辑把关
 5. **决策官**综合三方意见 → JSON 交易信号
-6. ★ **资金费率套利 Agent**（Claude）扫 OKX 全市场永续合约费率 → Delta-Neutral 套利推荐
+6. ★ **资金费率套利 Agent**（GPT-4o）扫 OKX 全市场永续合约费率 → Delta-Neutral 套利推荐
 7. ★ **OKX dry-run 订单生成**——把决策与套利推荐翻成可发送的真实订单 JSON（默认不真下单）
 """)
 

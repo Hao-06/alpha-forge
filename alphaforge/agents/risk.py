@@ -77,7 +77,7 @@ class RiskAgent:
             return RiskReading(
                 verdict="warn",
                 risk_score=5,
-                notes=(["📍 MOCK 模式 —— 真模式下由 GPT-5 输出 verdict/risk_score/notes"]
+                notes=(["📍 MOCK 模式 —— 真模式下由 GPT-4o-mini 输出 verdict/risk_score/notes"]
                         if mock_mode else ["（风险 Agent 解析失败，默认警告）"]),
                 raw=raw,
             )
