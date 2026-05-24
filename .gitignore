@@ -24,7 +24,7 @@ env/
 *.swp
 .DS_Store
 
-# Streamlit
+# Streamlit (secrets 不进 git；.streamlit/config.toml 主题配置可以 commit)
 .streamlit/secrets.toml
 
 # Runs / cache

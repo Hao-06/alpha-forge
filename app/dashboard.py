@@ -12,6 +12,7 @@
 from __future__ import annotations
 
 import json as _json
+import os
 import sys
 import time
 from datetime import datetime
@@ -21,9 +22,17 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import pandas as pd
 import streamlit as st
 
+# Streamlit Cloud 注入 secrets → 写到 os.environ，让下游 config/settings.py 能读到
+# 必须在 import config 之前完成
+try:
+    for _k, _v in st.secrets.items():
+        os.environ.setdefault(_k, str(_v))
+except Exception:
+    pass   # 本地无 secrets.toml 也无所谓，会走 .env
+
+import pandas as pd
 from alphaforge.llm import get_client
 from alphaforge.pipeline import TradingPipeline
 from alphaforge.strategies import ALL_STRATEGIES
