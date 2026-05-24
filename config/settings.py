@@ -21,7 +21,15 @@ class LLMSettings:
 
     @property
     def configured(self) -> bool:
-        return bool(self.api_key) and not self.api_key.startswith("sk-your-")
+        """判断 API Key 是否真配置。
+        强壮版：只要长度 ≥16 且不是占位符就算 configured。
+        GMI 的 JWT key 约 233 字符；OpenAI 兼容 sk- 开头 key 也 >= 40。
+        """
+        if not self.api_key or len(self.api_key) < 16:
+            return False
+        placeholders = ("sk-your-", "your-", "demo", "placeholder", "xxxx")
+        lower = self.api_key.lower()
+        return not any(lower.startswith(p) for p in placeholders)
 
 
 @dataclass(frozen=True)
