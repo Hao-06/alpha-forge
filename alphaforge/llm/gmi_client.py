@@ -113,24 +113,29 @@ class GMIClient:
             return text
 
         except Exception as exc:
-            # 余额不足 / 配额错误 → 优雅降级到 mock，让 UI 流程不中断
+            # 任何调用失败都优雅降级到 mock，绝不让 UI 流程中断（路演稳定性优先）。
+            # 日志如实记录错误类型——这是容错，不是隐瞒。
             msg = str(exc).lower()
             is_quota = ("insufficient" in msg or "quota" in msg
                         or "402" in msg or "429" in msg)
-            status = ("quota_exhausted → mock" if is_quota
-                      else f"error: {exc.__class__.__name__}: {exc}")
+            is_auth = ("401" in msg or "403" in msg
+                       or "authentication" in msg or "unauthorized" in msg)
+            if is_quota:
+                reason = "quota_exhausted"
+            elif is_auth:
+                reason = "auth_failed"
+            else:
+                reason = f"error:{exc.__class__.__name__}"
             self._append_log(CallLog(
                 ts=ts, model=model, agent=agent,
                 prompt_preview=prompt_preview,
                 latency_ms=int((time.perf_counter() - t0) * 1000),
                 prompt_tokens=None, completion_tokens=None,
-                status=status,
-                response_preview=f"[QUOTA-FALLBACK] agent={agent}" if is_quota else "",
+                status=f"{reason} → mock",
+                response_preview=f"[FALLBACK] agent={agent}",
             ))
-            if is_quota:
-                # 返回符合 mock 协议的占位字符串，让上层 agents 走友好 mock 分支
-                return f"[MOCK · quota_exhausted · agent={agent} · model={model}]"
-            raise
+            # 返回符合 mock 协议的占位字符串，让上层 agents 走友好 mock 分支
+            return f"[MOCK · {reason} · agent={agent} · model={model}]"
 
     # ------------------------------------------------------------------ #
     # 日志只读访问
