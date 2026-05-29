@@ -33,10 +33,109 @@ except Exception:
     pass   # 本地无 secrets.toml 也无所谓，会走 .env
 
 import pandas as pd
+import plotly.graph_objects as go
 from alphaforge.llm import get_client
 from alphaforge.pipeline import TradingPipeline
 from alphaforge.strategies import ALL_STRATEGIES
 from config import settings
+
+# ---------------------------------------------------------------------- #
+# 图表辅助 —— 统一深色金融终端主题（透明背景 + 古金/绿红 + 等宽字体）
+# ---------------------------------------------------------------------- #
+_C = dict(gold="#d4af37", green="#3fb950", red="#f0584e", blue="#58a6ff",
+          purple="#b07cff", ink="#e6edf3", muted="#8b949e", grid="#1a212c")
+
+
+def _layout(height, title=None):
+    return go.Layout(
+        height=height, paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
+        margin=dict(l=8, r=8, t=30 if title else 8, b=8),
+        font=dict(family="JetBrains Mono, SF Mono, monospace", color=_C["muted"], size=11),
+        title=dict(text=title, font=dict(color=_C["ink"], size=13), x=0.01) if title else None,
+        showlegend=False,
+    )
+
+
+def chart_price(ohlcv):
+    """K 线 + MA7/MA25 均线。"""
+    df = ohlcv.copy()
+    df["t"] = pd.to_datetime(df["ts"], unit="ms")
+    close = df["close"].astype(float)
+    fig = go.Figure(layout=_layout(300))
+    fig.add_trace(go.Candlestick(
+        x=df["t"], open=df["open"], high=df["high"], low=df["low"], close=df["close"],
+        increasing_line_color=_C["green"], decreasing_line_color=_C["red"],
+        increasing_fillcolor=_C["green"], decreasing_fillcolor=_C["red"], name="K线"))
+    fig.add_trace(go.Scatter(x=df["t"], y=close.rolling(7).mean(),
+                             line=dict(color=_C["gold"], width=1.4), name="MA7"))
+    fig.add_trace(go.Scatter(x=df["t"], y=close.rolling(25).mean(),
+                             line=dict(color=_C["blue"], width=1.4), name="MA25"))
+    fig.update_layout(
+        xaxis=dict(gridcolor=_C["grid"], rangeslider=dict(visible=False)),
+        yaxis=dict(gridcolor=_C["grid"], side="right"),
+        showlegend=True, legend=dict(orientation="h", y=1.06, x=0, font=dict(size=10)))
+    return fig
+
+
+def chart_regime(probs):
+    """Regime 概率分布水平条形图，主导项高亮金色。"""
+    items = sorted(probs.items(), key=lambda kv: kv[1])
+    labels = [k for k, _ in items]
+    vals = [v * 100 for _, v in items]
+    dom = max(probs, key=probs.get)
+    colors = [_C["gold"] if k == dom else "#37424f" for k in labels]
+    fig = go.Figure(layout=_layout(250, "Regime 概率分布"))
+    fig.add_trace(go.Bar(x=vals, y=labels, orientation="h", marker_color=colors,
+                         text=[f"{v:.0f}%" for v in vals], textposition="outside",
+                         textfont=dict(color=_C["ink"], size=11)))
+    fig.update_layout(xaxis=dict(visible=False, range=[0, max(vals) * 1.28 if vals else 1]),
+                      yaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=10)))
+    return fig
+
+
+def chart_weights(weights):
+    """策略权重环形图。"""
+    items = [(k, v) for k, v in weights.items() if v > 0.005]
+    labels = [k for k, _ in items]
+    vals = [v * 100 for _, v in items]
+    palette = [_C["gold"], _C["blue"], _C["green"], _C["purple"], _C["red"]]
+    fig = go.Figure(layout=_layout(250, "策略权重分配"))
+    fig.add_trace(go.Pie(labels=labels, values=vals, hole=0.58,
+                         marker=dict(colors=palette[:len(labels)], line=dict(color="#0e1117", width=2)),
+                         textinfo="label+percent", textfont=dict(size=10, color=_C["ink"]),
+                         sort=True, direction="clockwise"))
+    return fig
+
+
+def chart_risk(score):
+    """风险评分 gauge 仪表盘（1-10）。"""
+    color = _C["green"] if score <= 3 else (_C["gold"] if score <= 6 else _C["red"])
+    fig = go.Figure(layout=_layout(250, "风险评分"))
+    fig.add_trace(go.Indicator(
+        mode="gauge+number", value=score,
+        number=dict(font=dict(color=color, size=36), suffix=" /10"),
+        gauge=dict(axis=dict(range=[0, 10], tickcolor=_C["muted"], tickfont=dict(size=9)),
+                   bar=dict(color=color, thickness=0.32), bordercolor="rgba(0,0,0,0)",
+                   steps=[dict(range=[0, 3], color="rgba(63,185,80,.14)"),
+                          dict(range=[3, 6], color="rgba(212,175,55,.14)"),
+                          dict(range=[6, 10], color="rgba(240,88,78,.14)")]),
+        domain=dict(x=[0, 1], y=[0, 1])))
+    return fig
+
+
+def chart_funding(snaps, n=12):
+    """资金费率分布水平条形图：正费率(做空收费)红 / 负费率(做多收费)绿。"""
+    s = sorted(list(snaps)[:n], key=lambda x: x.rate_pct)
+    labels = [x.inst_id.replace("-USDT-SWAP", "") for x in s]
+    vals = [x.rate_pct for x in s]
+    colors = [_C["red"] if v > 0 else _C["green"] for v in vals]
+    fig = go.Figure(layout=_layout(300, "资金费率分布 %　·　红=正(做空收费) 绿=负(做多收费)"))
+    fig.add_trace(go.Bar(x=vals, y=labels, orientation="h", marker_color=colors,
+                         text=[f"{v:+.3f}" for v in vals], textposition="outside",
+                         textfont=dict(color=_C["muted"], size=10)))
+    fig.update_layout(xaxis=dict(gridcolor=_C["grid"], zeroline=True, zerolinecolor="#3a4453"),
+                      yaxis=dict(gridcolor="rgba(0,0,0,0)", tickfont=dict(size=9)))
+    return fig
 
 # ---------------------------------------------------------------------- #
 # 页面配置 + 全局样式
@@ -50,36 +149,104 @@ st.set_page_config(
 st.markdown(
     """
     <style>
-      .stApp { background-color: #0e1117; }
-      div[data-testid="stMetricValue"] { color: #d4af37; font-family: 'JetBrains Mono', monospace; }
-      .agent-card {
-        background: linear-gradient(135deg, #1a1d24, #14171c);
-        border: 1px solid #2a2f3a;
-        border-radius: 12px;
-        padding: 16px;
-        margin-bottom: 12px;
+      @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap');
+
+      :root{
+        --bg:#07090d; --panel:#0e1117; --panel2:#12161e; --panel3:#161b24;
+        --border:#232b38; --border-soft:#1a212c;
+        --gold:#d4af37; --gold-br:#ecc86a; --ink:#e6edf3; --muted:#8b949e; --dim:#586172;
+        --green:#3fb950; --red:#f0584e; --blue:#58a6ff;
+        --mono:'JetBrains Mono','SF Mono',ui-monospace,monospace;
       }
-      .agent-card.active { border-color: #d4af37; box-shadow: 0 0 16px rgba(212,175,55,0.18); }
-      .agent-card h4 { color: #d4af37; margin: 0 0 6px 0; font-size: 0.95rem; }
-      .agent-card .model-badge {
-        font-size: 0.7rem; color: #888; font-family: 'JetBrains Mono', monospace;
-        background: #0e1117; padding: 2px 8px; border-radius: 4px; display: inline-block;
-        margin-bottom: 6px;
+
+      .stApp{
+        background:
+          radial-gradient(1200px 520px at 78% -10%, rgba(212,175,55,.07), transparent 60%),
+          radial-gradient(900px 500px at 8% -5%, rgba(60,90,150,.06), transparent 55%),
+          #07090d;
       }
-      .agent-card .content { color: #c9d1d9; font-size: 0.85rem; line-height: 1.5; }
-      .pipeline-step { color: #888; font-size: 0.85rem; padding: 2px 0; }
-      .pipeline-step.done { color: #2ea043; }
-      .pipeline-step.active { color: #d4af37; font-weight: 600; }
-      .verdict-approve { color: #2ea043; font-weight: 700; }
-      .verdict-warn    { color: #d4af37; font-weight: 700; }
-      .verdict-veto    { color: #f85149; font-weight: 700; }
-      .funding-row.long { color: #2ea043; }
-      .funding-row.short { color: #f85149; }
-      .dry-run-badge {
-        background: #b3500024; color: #d4af37; border: 1px solid #b35000;
-        padding: 2px 8px; border-radius: 4px; font-size: 0.75rem;
-        font-family: 'JetBrains Mono', monospace; margin-left: 8px;
-      }
+      .stApp::before{ content:""; position:fixed; top:0; left:0; right:0; height:2px; z-index:9999;
+        background:linear-gradient(90deg,transparent,var(--gold) 30%,var(--gold-br) 50%,var(--gold) 70%,transparent); opacity:.7; }
+
+      html, body, [class*="css"]{ font-family:"PingFang SC","Hiragino Sans GB",-apple-system,"Microsoft YaHei",sans-serif; color:var(--ink); }
+      .block-container{ padding-top:2.2rem; padding-bottom:3rem; max-width:1500px; }
+      h3{ color:var(--ink); font-weight:700; letter-spacing:.3px; }
+      code, kbd{ font-family:var(--mono); color:var(--gold-br); }
+      ::-webkit-scrollbar{ width:10px; height:10px; }
+      ::-webkit-scrollbar-track{ background:#0b0e13; }
+      ::-webkit-scrollbar-thumb{ background:#222a36; border-radius:5px; }
+      ::-webkit-scrollbar-thumb:hover{ background:#2e3848; }
+      ::selection{ background:rgba(212,175,55,.28); }
+
+      [data-testid="stSidebar"]{ background:linear-gradient(180deg,#0b0e13,#080a0f); border-right:1px solid var(--border-soft); }
+      [data-testid="stSidebar"] h1{ font-size:1.4rem; }
+
+      .stButton > button{ font-weight:600; letter-spacing:.4px; border-radius:10px; border:1px solid #2a313d; transition:all .18s ease; }
+      .stButton > button:hover{ border-color:var(--gold); color:var(--gold); }
+      .stButton > button[kind="primary"]{ background:linear-gradient(135deg,#d4af37,#b8902b); color:#0a0c10; border:none; box-shadow:0 4px 16px rgba(212,175,55,.22); }
+      .stButton > button[kind="primary"]:hover{ box-shadow:0 6px 24px rgba(212,175,55,.4); transform:translateY(-1px); color:#0a0c10; }
+
+      [data-testid="stMetric"]{ background:linear-gradient(150deg,var(--panel3),var(--panel2)); border:1px solid var(--border); border-radius:14px; padding:16px 18px; }
+      [data-testid="stMetricLabel"]{ color:var(--muted)!important; }
+      [data-testid="stMetricValue"]{ color:var(--gold); font-family:var(--mono); font-weight:700; }
+
+      [data-testid="stDataFrame"]{ border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+      [data-testid="stExpander"]{ border:1px solid var(--border)!important; border-radius:12px!important; background:var(--panel)!important; overflow:hidden; }
+      [data-testid="stExpander"] summary:hover{ color:var(--gold); }
+      [data-testid="stTabs"] button[role="tab"][aria-selected="true"]{ color:var(--gold); }
+      [data-testid="stTabs"] [data-baseweb="tab-highlight"]{ background:var(--gold)!important; }
+      [data-testid="stAlert"]{ border-radius:12px; border:1px solid var(--border); }
+      pre{ border-radius:12px!important; border:1px solid var(--border)!important; }
+      hr{ border-color:var(--border-soft)!important; margin:1rem 0; }
+
+      /* hero 品牌区 */
+      .hero{ display:flex; align-items:center; justify-content:space-between; padding:20px 26px; margin-bottom:16px;
+        background:linear-gradient(120deg,#11151d,#0c0f15); border:1px solid var(--border); border-radius:16px; position:relative; overflow:hidden; }
+      .hero::after{ content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:linear-gradient(180deg,var(--gold),transparent); }
+      .hero .brand{ font-size:1.55rem; font-weight:800; letter-spacing:.5px; }
+      .hero .brand .g{ color:var(--gold); }
+      .hero .sub{ font-size:.74rem; color:var(--muted); font-family:var(--mono); letter-spacing:1.3px; margin-top:5px; }
+      .hero .live{ font-family:var(--mono); font-size:.78rem; color:var(--green); display:flex; align-items:center; gap:8px; justify-content:flex-end; }
+      .dot{ width:8px; height:8px; border-radius:50%; background:var(--green); animation:pulse 1.8s infinite; }
+      @keyframes pulse{ 0%{box-shadow:0 0 0 0 rgba(63,185,80,.5);} 70%{box-shadow:0 0 0 8px rgba(63,185,80,0);} 100%{box-shadow:0 0 0 0 rgba(63,185,80,0);} }
+
+      /* metric 卡 */
+      .mcard{ background:linear-gradient(150deg,var(--panel3),var(--panel2)); border:1px solid var(--border); border-radius:14px; padding:15px 18px; position:relative; overflow:hidden; }
+      .mcard::before{ content:""; position:absolute; left:0; top:0; bottom:0; width:3px; background:var(--accent,var(--gold)); opacity:.85; }
+      .mcard .lab{ font-size:.7rem; color:var(--muted); font-family:var(--mono); letter-spacing:1px; text-transform:uppercase; display:flex; align-items:center; gap:6px; }
+      .mcard .val{ font-size:1.55rem; font-weight:700; font-family:var(--mono); color:var(--ink); margin-top:8px; line-height:1.15; }
+      .mcard .sub{ font-size:.78rem; margin-top:6px; font-family:var(--mono); color:var(--muted); }
+
+      /* section 标题 */
+      .sec{ display:flex; align-items:center; gap:10px; font-size:1.1rem; font-weight:700; color:var(--ink); margin:8px 0 8px; }
+      .sec::before{ content:""; width:3px; height:18px; background:var(--gold); border-radius:2px; }
+      .sec .badge{ font-family:var(--mono); font-size:.7rem; color:var(--muted); font-weight:500; letter-spacing:.5px; }
+
+      /* agent card */
+      .agent-card{ background:linear-gradient(155deg,var(--panel3),var(--panel2)); border:1px solid var(--border); border-radius:14px;
+        padding:18px 18px 16px; margin-bottom:12px; position:relative; overflow:hidden; height:100%; }
+      .agent-card::before{ content:""; position:absolute; left:0; right:0; top:0; height:2px; background:linear-gradient(90deg,var(--gold),transparent); opacity:.65; }
+      .agent-card.active{ box-shadow:0 8px 30px rgba(0,0,0,.35); }
+      .agent-card h4{ color:var(--ink); margin:0 0 10px; font-size:1rem; font-weight:700; }
+      .agent-card .model-badge{ font-size:.66rem; color:var(--gold); font-family:var(--mono); letter-spacing:.5px;
+        background:rgba(212,175,55,.08); border:1px solid rgba(212,175,55,.25); padding:3px 9px; border-radius:5px; display:inline-block; margin-bottom:12px; }
+      .agent-card .content{ color:var(--muted); font-size:.85rem; line-height:1.65; }
+      .agent-card .content b{ color:var(--ink); font-weight:600; }
+
+      /* pipeline 步骤 */
+      .pipeline-step{ color:var(--dim); font-size:.9rem; padding:5px 0 5px 24px; position:relative; }
+      .pipeline-step::before{ content:""; position:absolute; left:5px; top:50%; transform:translateY(-50%); width:7px; height:7px; border-radius:50%; background:#2a3340; }
+      .pipeline-step.done{ color:var(--green); }
+      .pipeline-step.done::before{ background:var(--green); }
+      .pipeline-step.active{ color:var(--gold); font-weight:600; }
+      .pipeline-step.active::before{ background:var(--gold); animation:pulse 1.4s infinite; }
+
+      .verdict-approve{ color:var(--green); font-weight:700; }
+      .verdict-warn{ color:var(--gold); font-weight:700; }
+      .verdict-veto{ color:var(--red); font-weight:700; }
+      .funding-row.long{ color:var(--green); } .funding-row.short{ color:var(--red); }
+      .dry-run-badge{ background:rgba(212,175,55,.1); color:var(--gold); border:1px solid rgba(212,175,55,.4);
+        padding:3px 10px; border-radius:6px; font-size:.72rem; font-family:var(--mono); margin-left:10px; letter-spacing:.5px; }
     </style>
     """,
     unsafe_allow_html=True,
@@ -130,9 +297,19 @@ with st.sidebar:
 # ---------------------------------------------------------------------- #
 # 主区域
 # ---------------------------------------------------------------------- #
-st.markdown("### 决策驾驶舱")
-st.caption(f"目标用户：全球加密交易者　│　实时数据：{settings.market.exchange.upper()}"
-           f" + OKX funding 　│　{datetime.now(timezone.utc).strftime('%Y-%m-%d UTC')}")
+st.markdown(
+    f"""<div class="hero">
+      <div>
+        <div class="brand">⚡ Alpha<span class="g">Forge</span>　<span style="font-size:.95rem;font-weight:600;color:var(--muted);">决策驾驶舱</span></div>
+        <div class="sub">GLOBAL CRYPTO · MULTI-AGENT · LIVE STRATEGY OFFICER</div>
+      </div>
+      <div>
+        <div class="live"><span class="dot"></span>LIVE · {settings.market.exchange.upper()} + OKX FUNDING</div>
+        <div class="sub" style="text-align:right;margin-top:7px;">{datetime.now(timezone.utc).strftime('%Y-%m-%d UTC')}　·　目标用户：全球加密交易者</div>
+      </div>
+    </div>""",
+    unsafe_allow_html=True,
+)
 
 if "result" not in st.session_state:
     st.session_state.result = None
@@ -209,24 +386,48 @@ if decision is not None:
         f"　·　{_n_calls} 次 GMI Cloud 调用　·　端到端耗时 {_elapsed_str}"
     )
 
-    # 顶部 行情卡片
+    # 顶部 行情卡片（定制 metric 卡：状态灯 + 等宽数字 + accent 色条）
+    def _mcard(lab, val, sub, accent="var(--gold)", sub_color="var(--muted)", live=False):
+        dot = '<span class="dot"></span>' if live else ''
+        return (f'<div class="mcard" style="--accent:{accent};">'
+                f'<div class="lab">{dot}{lab}</div>'
+                f'<div class="val" style="color:{accent};">{val}</div>'
+                f'<div class="sub" style="color:{sub_color};">{sub}</div></div>')
+
     cols = st.columns(4)
-    cols[0].metric(decision.symbol, f"${snap.last_price:,.2f}" if snap else "-",
-                   f"{snap.pct_change_24h:+.2f}%" if snap else "-")
-    cols[1].metric("Regime", regime.dominant, f"{regime.probs[regime.dominant]:.0%}")
-    cols[2].metric("Action", decision.action.upper(), f"{decision.confidence:.0%} conf")
-    verdict_color = {"approve": "#2ea043", "warn": "#d4af37", "veto": "#f85149"}[risk.verdict]
-    cols[3].markdown(
-        f"<div data-testid='stMetric'>"
-        f"<div style='color:#888;font-size:0.8rem;'>Risk</div>"
-        f"<div style='color:{verdict_color};font-size:1.5rem;font-weight:700;'>"
-        f"{risk.risk_score}/10 · {risk.verdict.upper()}</div></div>",
-        unsafe_allow_html=True,
-    )
+    _chg = snap.pct_change_24h if snap else 0.0
+    _chg_color = "var(--green)" if _chg >= 0 else "var(--red)"
+    cols[0].markdown(_mcard(
+        decision.symbol, f"${snap.last_price:,.2f}" if snap else "—",
+        f"{'▲' if _chg >= 0 else '▼'} {_chg:+.2f}%　24h",
+        accent="var(--gold)", sub_color=_chg_color, live=True), unsafe_allow_html=True)
+    cols[1].markdown(_mcard(
+        "Regime", regime.dominant, f"{regime.probs[regime.dominant]:.0%} 主导概率",
+        accent="var(--blue)"), unsafe_allow_html=True)
+    _act_color = {"buy": "var(--green)", "sell": "var(--red)", "hold": "var(--gold)"}.get(decision.action, "var(--gold)")
+    cols[2].markdown(_mcard(
+        "Action", decision.action.upper(), f"{decision.confidence:.0%} confidence",
+        accent=_act_color), unsafe_allow_html=True)
+    _risk_color = {"approve": "var(--green)", "warn": "var(--gold)", "veto": "var(--red)"}[risk.verdict]
+    cols[3].markdown(_mcard(
+        "Risk", f"{risk.risk_score}/10", risk.verdict.upper(),
+        accent=_risk_color), unsafe_allow_html=True)
+
+    # 价格走势图（K线 + MA7/MA25）
+    if snap is not None and not snap.ohlcv.empty:
+        st.markdown('<div class="sec">📈 价格走势 <span class="badge">K线 · MA7 · MA25 · 最近 100 根</span></div>', unsafe_allow_html=True)
+        st.plotly_chart(chart_price(snap.ohlcv), use_container_width=True, config={"displayModeBar": False})
 
     st.markdown("---")
 
-    # Agent 工作矩阵（3 + 1，funding 单独一行更突出）
+    # Agent 决策可视化（图）—— 与下方文字卡图文呼应
+    st.markdown('<div class="sec">📊 Agent 决策可视化</div>', unsafe_allow_html=True)
+    g1, g2, g3 = st.columns(3)
+    g1.plotly_chart(chart_regime(regime.probs), use_container_width=True, config={"displayModeBar": False})
+    g2.plotly_chart(chart_weights(plan.weights), use_container_width=True, config={"displayModeBar": False})
+    g3.plotly_chart(chart_risk(risk.risk_score), use_container_width=True, config={"displayModeBar": False})
+
+    # Agent 详细输出（文字卡，3 + 1，funding 单独一行更突出）
     a, b, c = st.columns(3)
     with a:
         st.markdown(
@@ -272,7 +473,7 @@ if decision is not None:
             unsafe_allow_html=True,
         )
 
-    st.markdown("### 🧠 综合决策")
+    st.markdown('<div class="sec">🧠 综合决策 <span class="badge">DecisionOfficer · 确定性规则聚合</span></div>', unsafe_allow_html=True)
     st.markdown(f"> {decision.rationale}")
     st.code(_json.dumps(decision.to_json(), ensure_ascii=False, indent=2), language="json")
 
@@ -281,7 +482,7 @@ if decision is not None:
     # ------------------------------------------------------------------ #
     if funding is not None:
         st.markdown("---")
-        st.markdown("### 💱 资金费率套利 Agent（OKX 全市场扫描）")
+        st.markdown('<div class="sec">💱 资金费率套利 Agent <span class="badge">OKX 全市场扫描</span></div>', unsafe_allow_html=True)
         st.caption(f"📡 实时拉取 OKX `/api/v5/public/funding-rate` · {len(funding.snapshots)} 个合约 9 小时内即将结算")
         if funding.summary:
             st.markdown(f"**市场态势**：{funding.summary}")
@@ -307,6 +508,10 @@ if decision is not None:
                         unsafe_allow_html=True,
                     )
 
+        # 资金费率分布图
+        if funding.snapshots:
+            st.plotly_chart(chart_funding(funding.snapshots), use_container_width=True, config={"displayModeBar": False})
+
         # 全市场费率排行榜
         with st.expander(f"📋 全市场资金费率排行（前 {min(len(funding.snapshots), 20)}）", expanded=False):
             df = pd.DataFrame([
@@ -326,8 +531,8 @@ if decision is not None:
     if main_order or funding_orders:
         st.markdown("---")
         st.markdown(
-            "### 🔌 OKX 执行层 · Dry-Run 订单预览"
-            "<span class='dry-run-badge'>DRY-RUN（不真下单）</span>",
+            '<div class="sec">🔌 OKX 执行层 · Dry-Run 订单预览'
+            '<span class="dry-run-badge">DRY-RUN · 不真下单</span></div>',
             unsafe_allow_html=True,
         )
         st.caption("基于 Agent 决策与 funding 推荐，已生成可发送的 OKX 订单（含 HMAC-SHA256 签名）。"
